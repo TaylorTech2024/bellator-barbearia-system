@@ -129,6 +129,52 @@ export function addReview({clienteId, agendamentoId, nota, comentario}){
   saveDB(db);
 }
 
+
+// --- Helpers para telas de horário/agendas (modo localStorage demo) ---
+// No modo "offline/local", não existe backend para sincronizar.
+// Essas funções existem para manter compatibilidade com as páginas.
+export async function refreshAppointmentsForUser(_user){
+  // noop: dados já estão no localStorage
+  return true;
+}
+
+export async function refreshAdminReport(){
+  // noop: relatório é calculado localmente em adminReport()
+  return true;
+}
+
+/**
+ * Retorna uma lista de horários ocupados (HH:MM) de um barbeiro em uma data (YYYY-MM-DD).
+ * Regra: considera agendamentos não cancelados e bloqueia todos os slots cobertos pela duração do serviço.
+ * Ex: um serviço de 60min com step 30 bloqueia 2 slots (start e start+30).
+ */
+export async function getBusyTimes(barbeiroId, dateStr){
+  const db = ensureDB();
+  const barber = db.barbers.find(b => b.id === barbeiroId);
+  const step = barber?.horarios?.stepMin || 30;
+
+  const serviceMap = Object.fromEntries(db.services.map(s => [s.id, s]));
+  const busy = new Set();
+
+  for(const ap of db.appointments){
+    if(ap.barbeiroId !== barbeiroId) continue;
+    if(ap.status === "Cancelado") continue;
+
+    const d = new Date(ap.dataHora);
+    const localDateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    if(localDateStr !== dateStr) continue;
+
+    const dur = serviceMap[ap.servicoId]?.duracaoMin || 30;
+    for(let m=0; m < dur; m += step){
+      const t = new Date(d.getTime() + m*60000);
+      const key = `${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`;
+      busy.add(key);
+    }
+  }
+
+  return Array.from(busy).sort();
+}
+
 export function adminReport(){
   const db = ensureDB();
   // faturamento: soma de atendimentos concluídos
